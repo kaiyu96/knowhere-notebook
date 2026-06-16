@@ -4,14 +4,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { workspaceClient } from "@/domains/workspace/client";
 import { ChatMessageList } from "./chat-message-list";
-
-vi.mock("@/domains/workspace/client", () => ({
-  workspaceClient: {
-    createChatDiagram: vi.fn(),
-  },
-}));
 
 describe("ChatMessageList", () => {
   beforeEach(() => {
@@ -28,7 +21,6 @@ describe("ChatMessageList", () => {
       });
     vi.spyOn(window.HTMLElement.prototype, "offsetWidth", "get")
       .mockImplementation((): number => 720);
-    vi.mocked(workspaceClient.createChatDiagram).mockReset();
   });
 
   afterEach(() => {
@@ -111,6 +103,44 @@ describe("ChatMessageList", () => {
     expect(onCitationClick).toHaveBeenCalledWith(citation, "assistant_1:0");
   });
 
+  it("places unmatched source chips inside the answer body", () => {
+    render(
+      React.createElement(ChatMessageList, {
+        messages: [
+          {
+            id: "assistant_1",
+            role: "assistant",
+            content:
+              "The deadline is Monday.\n\nUse the schedule section for the exact date.",
+            citations: [
+              {
+                chunkType: "text",
+                score: 0.9,
+                source: {
+                  documentId: "doc_1",
+                  sourceFileName: "syllabus.pdf",
+                  sectionPath: "Schedule",
+                },
+              },
+            ],
+          },
+        ],
+        sourceTitlesByDocumentId: {
+          doc_1: "Syllabus.pdf",
+        },
+      }),
+    );
+
+    const firstParagraph = screen.getByText(
+      (_content, element): boolean =>
+        element?.tagName.toLowerCase() === "p" &&
+        Boolean(element.textContent?.startsWith("The deadline is Monday.")),
+    );
+
+    expect(within(firstParagraph).getByRole("button")).toBeTruthy();
+    expect(screen.queryByText("Sources used")).toBeNull();
+  });
+
   it("renders image citations as viewable image attachments", () => {
     render(
       React.createElement(ChatMessageList, {
@@ -175,23 +205,24 @@ describe("ChatMessageList", () => {
     expect(screen.getByRole("cell", { name: "Ready" })).toBeTruthy();
   });
 
-  it("creates and renders a diagram for an assistant answer", async () => {
-    const user = userEvent.setup();
-    vi.mocked(workspaceClient.createChatDiagram).mockResolvedValue({
-      diagram: {
-        type: "bar",
-        source: "chart-visualization-skills",
-        title: "Revenue by Segment",
-        axisYTitle: "Revenue",
-        data: [
-          { category: "Cloud", value: 42 },
-          { category: "Ads", value: 28 },
-        ],
-      },
-    });
-
+  it("renders diagram results without exposing a per-answer create button", () => {
     render(
       React.createElement(ChatMessageList, {
+        diagramStatesByMessageId: {
+          assistant_1: {
+            status: "ready",
+            diagram: {
+              type: "bar",
+              source: "chart-visualization-skills",
+              title: "Revenue by Segment",
+              axisYTitle: "Revenue",
+              data: [
+                { category: "Cloud", value: 42 },
+                { category: "Ads", value: 28 },
+              ],
+            },
+          },
+        },
         messages: [
           {
             id: "assistant_1",
@@ -202,12 +233,10 @@ describe("ChatMessageList", () => {
       }),
     );
 
-    await user.click(screen.getByRole("button", { name: "Create diagram" }));
-
-    expect(workspaceClient.createChatDiagram).toHaveBeenCalledWith({
-      answer: "Cloud revenue was 42 and Ads revenue was 28.",
-    });
-    expect(await screen.findByText("Revenue by Segment")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Create diagram" }),
+    ).toBeNull();
+    expect(screen.getByText("Revenue by Segment")).toBeTruthy();
     expect(
       screen.getByRole("img", { name: "Revenue by Segment" }),
     ).toBeTruthy();

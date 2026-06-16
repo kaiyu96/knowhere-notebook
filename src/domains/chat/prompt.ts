@@ -55,7 +55,8 @@ const ANSWER_FORMATTING_RULES = [
   "Headers:",
   "- Never start your answer with a header. Begin with 1-2 direct sentences that answer the user.",
   "- Use level 2 headers (##) only for main sections when the answer needs clear sections.",
-  "- Use bold text sparingly for short subsection labels or emphasis inside paragraphs.",
+  "- Use bold text for short subsection labels inside a section, then continue the explanation in the same paragraph.",
+  "- Do not use level 3+ headers for subsection labels; prefer bold inline subsection labels.",
   "",
   "Lists:",
   "- Use unordered bullet lists for multiple facts, features, risks, findings, or comparisons.",
@@ -72,6 +73,7 @@ const ANSWER_FORMATTING_RULES = [
   "",
   "Style:",
   "- Use markdown for paragraphs, tables, quotes, and readable structure when it helps.",
+  "- Use italics only for terms, phrases, or document-native emphasis that benefits from subtle emphasis.",
   "- Maintain visual hierarchy: ## main sections, bold subsection labels, regular list items, regular paragraphs.",
   "- Do not append a generic source-links section at the end. Put source citations inline near the claims they support.",
 ] as const

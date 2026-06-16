@@ -1,13 +1,12 @@
 "use client";
 
 import {
-  useState,
   type CSSProperties,
   type ReactElement,
   type ReactNode,
 } from "react";
 import { type VirtualItem } from "@tanstack/react-virtual";
-import { BarChart3, ImageIcon, MessageCircle } from "lucide-react";
+import { ImageIcon, MessageCircle } from "lucide-react";
 import ReactMarkdown, {
   defaultUrlTransform,
   type Components,
@@ -17,21 +16,13 @@ import remarkGfm from "remark-gfm";
 import { ChatDiagramCard } from "@/components/chat-diagram-card";
 import { useChatMessageListWorkflow } from "@/components/chat-message-list-workflow";
 import { chatPanelModel } from "@/components/chat-panel-model";
-import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import type {
   ChatCitationView,
   ChatMessageView,
 } from "@/domains/chat/types";
 import type { ChatDiagramChartSpec } from "@/domains/chat/diagram";
-import { workspaceClient } from "@/domains/workspace/client";
 
 type DisplayCitation = {
   readonly citation: ChatCitationView;
@@ -48,7 +39,7 @@ type InlineCitationMarkdown = {
   readonly usedCitationIds: ReadonlySet<string>;
 };
 
-type ChatDiagramState =
+export type ChatDiagramState =
   | {
       readonly status: "idle";
     }
@@ -79,6 +70,7 @@ const assistantMarkdownComponents: Components = {
 export type ChatMessageListProps = {
   readonly isDisabled?: boolean;
   readonly isSending?: boolean;
+  readonly diagramStatesByMessageId?: Readonly<Record<string, ChatDiagramState>>;
   readonly messages?: readonly ChatMessageView[];
   readonly needsLogin?: boolean;
   readonly onCitationClick?: (
@@ -93,6 +85,7 @@ export type ChatMessageListProps = {
 export function ChatMessageList({
   isDisabled = false,
   isSending = false,
+  diagramStatesByMessageId = {},
   messages = [],
   needsLogin = false,
   onCitationClick,
@@ -100,9 +93,6 @@ export function ChatMessageList({
   pendingStatusText = null,
   sourceTitlesByDocumentId = {},
 }: ChatMessageListProps): ReactElement {
-  const [diagramStatesByMessageId, setDiagramStatesByMessageId] = useState<
-    Readonly<Record<string, ChatDiagramState>>
-  >({});
   const {
     getVirtualMessage,
     isThinkingVirtualItem,
@@ -112,58 +102,6 @@ export function ChatMessageList({
     viewportRef,
     virtualItems,
   } = useChatMessageListWorkflow({ isSending, messages });
-
-  async function handleCreateDiagram(message: ChatMessageView): Promise<void> {
-    if (diagramStatesByMessageId[message.id]?.status === "loading") return;
-
-    setDiagramStatesByMessageId((current) => ({
-      ...current,
-      [message.id]: { status: "loading" },
-    }));
-
-    try {
-      const response = await workspaceClient.createChatDiagram({
-        answer: message.content,
-      });
-      const diagram = response.diagram;
-      if (!diagram) {
-        setDiagramStatesByMessageId((current) => ({
-          ...current,
-          [message.id]: {
-            status: "error",
-            message: response.message ?? "Diagram could not be created.",
-          },
-        }));
-        return;
-      }
-      if (diagram.type === "none") {
-        setDiagramStatesByMessageId((current) => ({
-          ...current,
-          [message.id]: {
-            status: "empty",
-            reason: diagram.reason,
-          },
-        }));
-        return;
-      }
-
-      setDiagramStatesByMessageId((current) => ({
-        ...current,
-        [message.id]: {
-          status: "ready",
-          diagram,
-        },
-      }));
-    } catch {
-      setDiagramStatesByMessageId((current) => ({
-        ...current,
-        [message.id]: {
-          status: "error",
-          message: "Diagram could not be created.",
-        },
-      }));
-    }
-  }
 
   return (
     <ScrollArea
@@ -192,7 +130,6 @@ export function ChatMessageList({
                 diagramState={
                   diagramStatesByMessageId[getVirtualMessage(virtualItem)?.id ?? ""]
                 }
-                onCreateDiagram={handleCreateDiagram}
                 onCitationClick={onCitationClick}
                 pendingCitationId={pendingCitationId}
                 sourceTitlesByDocumentId={sourceTitlesByDocumentId}
@@ -262,7 +199,6 @@ function VirtualMessageRow({
   virtualItem,
   message,
   measureElement,
-  onCreateDiagram,
   onCitationClick,
   pendingCitationId,
   sourceTitlesByDocumentId,
@@ -271,7 +207,6 @@ function VirtualMessageRow({
   readonly virtualItem: VirtualItem;
   readonly message: ChatMessageView | undefined;
   readonly measureElement: (node: HTMLDivElement | null) => void;
-  readonly onCreateDiagram: (message: ChatMessageView) => void;
   readonly onCitationClick?: (
     citation: ChatCitationView,
     citationId: string,
@@ -299,7 +234,6 @@ function VirtualMessageRow({
       <MessageBubble
         diagramState={diagramState ?? idleDiagramState}
         message={message}
-        onCreateDiagram={onCreateDiagram}
         onCitationClick={onCitationClick}
         pendingCitationId={pendingCitationId}
         sourceTitlesByDocumentId={sourceTitlesByDocumentId}
@@ -337,14 +271,12 @@ function EmptyChat({
 function MessageBubble({
   diagramState,
   message,
-  onCreateDiagram,
   onCitationClick,
   pendingCitationId,
   sourceTitlesByDocumentId,
 }: {
   readonly diagramState: ChatDiagramState;
   readonly message: ChatMessageView;
-  readonly onCreateDiagram: (message: ChatMessageView) => void;
   readonly onCitationClick?: (
     citation: ChatCitationView,
     citationId: string,
@@ -374,31 +306,17 @@ function MessageBubble({
     message.content,
     displayCitations,
   );
-  const sourceListCitations = displayCitations.filter(
-    ({ citationId }): boolean =>
-      !inlineCitationMarkdown.usedCitationIds.has(citationId),
-  );
-  const sourceListLabel =
-    inlineCitationMarkdown.usedCitationIds.size > 0
-      ? "More sources"
-      : "Sources used";
 
   return (
     <div className="flex min-w-0 flex-col items-start">
       <div className="max-w-[92%] overflow-hidden rounded-2xl rounded-tl-sm border border-border/70 bg-card px-3 py-2.5 text-sm leading-relaxed text-foreground shadow-xs sm:max-w-[90%] sm:px-4 sm:py-3">
-        <TooltipProvider delayDuration={150}>
-          <AssistantMessageContent
-            content={inlineCitationMarkdown.content}
-            displayCitations={displayCitations}
-            onCitationClick={onCitationClick}
-            pendingCitationId={pendingCitationId}
-          />
-        </TooltipProvider>
-        <AssistantDiagram
-          message={message}
-          state={diagramState}
-          onCreateDiagram={onCreateDiagram}
+        <AssistantMessageContent
+          content={inlineCitationMarkdown.content}
+          displayCitations={displayCitations}
+          onCitationClick={onCitationClick}
+          pendingCitationId={pendingCitationId}
         />
+        <AssistantDiagram state={diagramState} />
         {displayImageCitations.length > 0 && (
           <div className="mt-3 border-t border-border/70 pt-2.5">
             <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -425,28 +343,6 @@ function MessageBubble({
                 </figure>
               ))}
             </div>
-          </div>
-        )}
-        {sourceListCitations.length > 0 && (
-          <div className="mt-3 border-t border-border/70 pt-2.5">
-            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              {sourceListLabel}
-            </p>
-            <TooltipProvider delayDuration={150}>
-              <div className="flex flex-wrap gap-1.5">
-                {sourceListCitations.map(({ citation, citationId, label }) => (
-                  <CitationChip
-                    key={citationId}
-                    citation={citation}
-                    citationId={citationId}
-                    label={label}
-                    text={getCitationChipText(label)}
-                    isPending={citationId === pendingCitationId}
-                    onCitationClick={onCitationClick}
-                  />
-                ))}
-              </div>
-            </TooltipProvider>
           </div>
         )}
       </div>
@@ -541,53 +437,38 @@ function CitationChip({
   readonly text: ReactNode;
 }): ReactElement {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          disabled={!onCitationClick || isPending}
-          onClick={() => onCitationClick?.(citation, citationId)}
-          className="inline-flex max-w-[250px] cursor-pointer items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 align-baseline text-[11px] font-semibold leading-4 text-primary transition-colors hover:border-primary/45 hover:bg-primary/15 hover:text-primary/80 focus:outline-none focus:ring-4 focus:ring-ring/15 focus:ring-offset-2 focus:ring-offset-background disabled:cursor-wait disabled:opacity-75"
-          aria-label={`Open source ${label}`}
-        >
-          {isPending && <Spinner className="size-3" />}
-          <span className="min-w-0 truncate">{text}</span>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <button
+      type="button"
+      disabled={!onCitationClick || isPending}
+      onClick={() => onCitationClick?.(citation, citationId)}
+      className="inline-flex max-w-[250px] cursor-pointer items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 align-baseline text-[11px] font-semibold leading-4 text-primary transition-colors hover:border-primary/45 hover:bg-primary/15 hover:text-primary/80 focus:outline-none focus:ring-4 focus:ring-ring/15 focus:ring-offset-2 focus:ring-offset-background disabled:cursor-wait disabled:opacity-75"
+      aria-label={`Open source ${label}`}
+      title={label}
+    >
+      {isPending && <Spinner className="size-3" />}
+      <span className="min-w-0 truncate">{text}</span>
+    </button>
   );
 }
 
 function AssistantDiagram({
-  message,
-  onCreateDiagram,
   state,
 }: {
-  readonly message: ChatMessageView;
-  readonly onCreateDiagram: (message: ChatMessageView) => void;
   readonly state: ChatDiagramState;
 }): ReactElement | null {
-  if (message.content.trim().length === 0) return null;
+  if (state.status === "idle") return null;
 
   return (
     <div className="mt-3 border-t border-border/70 pt-2.5">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={state.status === "loading"}
-        onClick={() => onCreateDiagram(message)}
-        className="h-7 gap-1.5 rounded-full px-3 text-[11px] font-semibold"
-        aria-label="Create diagram"
-      >
-        {state.status === "loading" ? (
+      {state.status === "loading" && (
+        <div
+          role="status"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"
+        >
           <Spinner className="size-3.5" />
-        ) : (
-          <BarChart3 className="size-3.5" />
-        )}
-        <span>{state.status === "loading" ? "Creating" : "Create diagram"}</span>
-      </Button>
+          <span>Creating diagram</span>
+        </div>
+      )}
       {state.status === "ready" && (
         <ChatDiagramCard diagram={state.diagram} />
       )}
@@ -621,10 +502,46 @@ function buildInlineCitationMarkdown(
     }
   }
 
+  const unusedCitations = displayCitations.filter(
+    ({ citationId }): boolean => !usedCitationIds.has(citationId),
+  );
+  if (unusedCitations.length > 0) {
+    const fallbackLinks = unusedCitations.map(
+      (displayCitation): string =>
+        `[${escapeMarkdownLinkText(
+          getCitationChipText(displayCitation.label),
+        )}](${getCitationHref(displayCitation.citationId)})`,
+    );
+    rewrittenContent = insertFallbackCitationLinks(
+      rewrittenContent,
+      fallbackLinks,
+    );
+    for (const displayCitation of unusedCitations) {
+      usedCitationIds.add(displayCitation.citationId);
+    }
+  }
+
   return {
     content: rewrittenContent,
     usedCitationIds,
   };
+}
+
+function insertFallbackCitationLinks(
+  content: string,
+  citationLinks: readonly string[],
+): string {
+  if (citationLinks.length === 0) return content;
+
+  const inlineLinks = citationLinks.join(" ");
+  const firstParagraphBreakIndex = content.indexOf("\n\n");
+  if (firstParagraphBreakIndex === -1) {
+    return `${content.trimEnd()} ${inlineLinks}`;
+  }
+
+  const firstParagraph = content.slice(0, firstParagraphBreakIndex).trimEnd();
+  const remainingContent = content.slice(firstParagraphBreakIndex);
+  return `${firstParagraph} ${inlineLinks}${remainingContent}`;
 }
 
 function getInlineCitationTokens(
