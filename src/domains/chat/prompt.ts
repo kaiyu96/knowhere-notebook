@@ -50,6 +50,31 @@ const AGENT_LOOP_TOOL_LOG_ENTRY_LIMIT = 4
 const AGENT_REQUIRED_SEARCH_STEP_COUNT = 2
 const RAW_URL_PATTERN = /https?:\/\/[^\s)\]}>"']+/g
 const REDACTED_MEDIA_URL = "[media asset URL hidden]"
+const ANSWER_FORMATTING_RULES = [
+  "Formatting rules",
+  "Headers:",
+  "- Never start your answer with a header. Begin with 1-2 direct sentences that answer the user.",
+  "- Use level 2 headers (##) only for main sections when the answer needs clear sections.",
+  "- Use bold text sparingly for short subsection labels or emphasis inside paragraphs.",
+  "",
+  "Lists:",
+  "- Use unordered bullet lists for multiple facts, features, risks, findings, or comparisons.",
+  "- Use numbered lists only for ordered steps, rankings, or sequences.",
+  "- Do not mix ordered and unordered lists in one list. Do not nest lists; fold sub-points inline with commas or parentheses.",
+  "",
+  "Tables:",
+  "- When comparing things, use a markdown table instead of a long list.",
+  "- Keep tables compact and evidence-backed.",
+  "",
+  "Code and math:",
+  "- Use fenced code blocks with language tags for code.",
+  "- Use LaTeX \\( \\) for inline math and \\[ \\] for block math.",
+  "",
+  "Style:",
+  "- Use markdown for paragraphs, tables, quotes, and readable structure when it helps.",
+  "- Maintain visual hierarchy: ## main sections, bold subsection labels, regular list items, regular paragraphs.",
+  "- Do not append a generic source-links section at the end. Put source citations inline near the claims they support.",
+] as const
 
 type GenerateContextualRetrievalQueryInput = {
   question: string
@@ -330,6 +355,8 @@ export function buildGroundedPrompt(input: BuildGroundedPromptInput): string {
     "Keep answers concise by default: 1-3 short paragraphs unless the user asks for detail.",
     "CITATION FORMAT: Cite evidence by document and section path, e.g. [文档名 / 章节名].",
     "",
+    ...ANSWER_FORMATTING_RULES,
+    "",
     `Question: ${input.question}`,
     `Retrieval query used: ${retrievalQuery}`,
     "",
@@ -398,6 +425,8 @@ export function buildAgenticChatSystemPrompt(
     "Do not add unrelated personal details for send/show image requests unless the user asks.",
     "Use GitHub-flavored Markdown when it improves readability, such as short lists, tables, or code blocks. Keep simple answers as plain sentences.",
     "Start with the answer first. Keep answers concise unless the user asks for detail.",
+    "",
+    ...ANSWER_FORMATTING_RULES,
     "",
     "Searchable sources",
     sourceContext,
